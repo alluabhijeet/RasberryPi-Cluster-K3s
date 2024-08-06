@@ -1,55 +1,38 @@
-# tasks file for cilium_install
-- name: Fetch Cilium CLI version
-  ansible.builtin.uri:
-    url: "{{ cilium_cli_version_url }}"
-    return_content: yes
-  register: cilium_cli_version_response
+---
+- name: Determine system architecture
+  shell: uname -m
+  register: arch
+  changed_when: false
 
-- name: Set Cilium CLI version
-  ansible.builtin.set_fact:
-    cilium_cli_version: "{{ cilium_cli_version_response.content }}"
+- name: Set Cilium CLI architecture
+  set_fact:
+    cilium_arch: "{{ 'arm64' if arch.stdout == 'aarch64' else 'amd64' }}"
 
-- name: Download Cilium CLI tarball and checksum
-  ansible.builtin.get_url:
-    url: "{{ cilium_cli_base_url }}/{{ cilium_cli_version }}/cilium-linux-{{ cli_arch }}.tar.gz"
-    dest: /tmp/cilium-linux-{{ cli_arch }}.tar.gz
-
-- name: Download Cilium CLI checksum
-  ansible.builtin.get_url:
-    url: "{{ cilium_cli_base_url }}/{{ cilium_cli_version }}/cilium-linux-{{ cli_arch }}.tar.gz.sha256sum"
-    dest: /tmp/cilium-linux-{{ cli_arch }}.tar.gz.sha256sum
-
-- name: Verify checksum of downloaded tarball
-  ansible.builtin.command:
-    cmd: sha256sum --check /tmp/cilium-linux-{{ cli_arch }}.tar.gz.sha256sum
+- name: Download Cilium CLI
+  shell: |
+    CILIUM_CLI_VERSION=$(curl -s https://raw.githubusercontent.com/cilium/cilium-cli/main/stable.txt)
+    curl -L --fail --remote-name-all https://github.com/cilium/cilium-cli/releases/download/${CILIUM_CLI_VERSION}/cilium-linux-{{ cilium_arch }}.tar.gz{,.sha256sum}
+    sha256sum --check cilium-linux-{{ cilium_arch }}.tar.gz.sha256sum
+    sudo tar xzvfC cilium-linux-{{ cilium_arch }}.tar.gz /usr/local/bin
+    rm cilium-linux-{{ cilium_arch }}.tar.gz{,.sha256sum}
   args:
-    chdir: /tmp
+    executable: /bin/bash
 
-- name: Extract Cilium CLI
-  ansible.builtin.unarchive:
-    src: /tmp/cilium-linux-{{ cli_arch }}.tar.gz
-    dest: /usr/local/bin/
-    remote_src: yes
-    creates: /usr/local/bin/cilium
+- name: Install Cilium
+  shell: |
+    export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
+    cilium install --version {{ cilium_version }} --set=ipam.operator.clusterPoolIPv4PodCIDRList="{{ pod_cidr }}"
+  args:
+    executable: /bin/bash
 
-- name: Remove downloaded files
-  ansible.builtin.file:
-    path: /tmp/cilium-linux-{{ cli_arch }}.tar.gz*
-    state: absent
-
-- name: Install Cilium with specific IPAM configuration
-  ansible.builtin.command:
-    cmd: /usr/local/bin/cilium install --version 1.16.0 --set=ipam.operator.clusterPoolIPv4PodCIDRList="10.42.0.0/16"
-  environment:
-    KUBECONFIG: "{{ kubeconfig_path }}"
-
-- name: Wait for Cilium status to be OK
-  ansible.builtin.command:
-    cmd: /usr/local/bin/cilium status --wait
-  environment:
-    KUBECONFIG: "{{ kubeconfig_path }}"
+- name: Validate Cilium installation
+  shell: |
+    export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
+    cilium status --wait
+  args:
+    executable: /bin/bash
   register: cilium_status
 
-- name: Output Cilium status
-  ansible.builtin.debug:
+- name: Display Cilium status
+  debug:
     var: cilium_status.stdout

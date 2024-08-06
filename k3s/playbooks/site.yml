@@ -20,8 +20,9 @@
   roles:
     - role: k3s_agent
 
-- name: Install Cilium on K3s
-  hosts: k3s_servers
-  become: yes
+- name: Install Cilium
+  hosts: server
+  become: true
   roles:
     - cilium_install
+
