@@ -1,0 +1,5 @@
+# defaults file for cilium_install
+cilium_cli_version_url: "https://raw.githubusercontent.com/cilium/cilium-cli/main/stable.txt"
+cilium_cli_base_url: "https://github.com/cilium/cilium-cli/releases/download"
+cli_arch: "{{ 'arm64' if ansible_architecture == 'aarch64' else 'amd64' }}"
+kubeconfig_path: "/etc/rancher/k3s/k3s.yaml"
